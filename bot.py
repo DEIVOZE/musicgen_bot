@@ -9,7 +9,7 @@ from aiogram import F
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-API_TOKEN = os.getenv("BOT_TOKEN")  # получаем токен из переменной окружения
+API_TOKEN = os.getenv("API_TOKEN")  # получаем токен из переменной окружения
 WEBHOOK_PATH = f"/webhook"  # путь, можно любой
 BASE_WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # Render вставит его сам
 WEBHOOK_URL = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
