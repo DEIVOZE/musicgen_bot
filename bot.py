@@ -1,18 +1,19 @@
 import logging
 import os
-from aiogram import Bot, Dispatcher
-from aiogram.enums import ParseMode
-from aiogram.webhook.aiohttp_server import setup_application
-from aiohttp import web
 import asyncio
-from aiogram import F
+from idlelib.undo import Command
+
+from aiogram import Bot, Dispatcher, F
+from aiogram.enums import ParseMode
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
+from aiogram.webhook.aiohttp_server import setup_application, webhook_handler
+from aiohttp import web
 
-API_TOKEN = os.getenv("API_TOKEN")  # получаем токен из переменной окружения
-WEBHOOK_PATH = f"/webhook"  # путь, можно любой
-BASE_WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # Render вставит его сам
+API_TOKEN = os.getenv("API_TOKEN")  # токен бота
+WEBHOOK_PATH = "/webhook"  # путь для webhook, обязательно с /
+BASE_WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # URL твоего сервера без слэша на конце
 WEBHOOK_URL = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
 
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +24,8 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# Топики и их thread_id
+# Здесь твой словарь topics_cache и остальные обработчики (копируй свои)
+
 topics_cache = {
     'Любимое': 23,
     'Сон': 22,
@@ -37,9 +39,8 @@ topics_cache = {
     'Рок': 8
 }
 
-# храним выбор пользователя и его аудио
-user_choices = {}  # user_id -> set(topic_name)
-user_audio = {}  # user_id -> {'file_id': ..., 'title': ..., 'performer': ...}
+user_choices = {}
+user_audio = {}
 
 
 def get_keyboard(user_id: int):
@@ -56,18 +57,20 @@ def get_keyboard(user_id: int):
     return builder.as_markup()
 
 
+@dp.message(Command("start"))
+async def cmd_start(message: Message):
+    await message.answer("Привет! Я бот для сортировки музыки по жанрам и не только!")
+
+
 @dp.message(F.audio & (F.message_thread_id == None))
 async def get_music(message: Message):
     user_id = message.from_user.id
-    # сохраняем файл и метаданные
     user_audio[user_id] = {
         'file_id': message.audio.file_id,
         'title': message.audio.title,
         'performer': message.audio.performer
     }
-    # сбрасываем предыдущий выбор
     user_choices[user_id] = set()
-    # показываем клавиатуру
     await message.reply(
         "Выберите плейлисты, куда переслать эту музыку:",
         reply_markup=get_keyboard(user_id)
@@ -94,17 +97,14 @@ async def process_done(callback: CallbackQuery):
     audio_info = user_audio.get(user_id)
 
     if not audio_info:
-        # на всякий случай
         await callback.message.edit_text("Ошибка: не удалось найти аудио. Повторите отправку файла.")
         return
 
     if selected:
-        # Отправляем аудио во все выбранные топики
         group_id = callback.message.chat.id
         tasks = []
         for topic in selected:
             thread_id = topics_cache[topic]
-            # напрямую по file_id, без скачивания
             tasks.append(bot.send_audio(
                 chat_id=group_id,
                 message_thread_id=thread_id,
@@ -113,7 +113,6 @@ async def process_done(callback: CallbackQuery):
                 performer=audio_info.get('performer'),
                 caption=f"Переслано от {callback.from_user.username or callback.from_user.full_name}"
             ))
-        # Добавление в плейлист вся музыка
         tasks.append(bot.send_audio(
             chat_id=group_id,
             message_thread_id=2,
@@ -122,24 +121,25 @@ async def process_done(callback: CallbackQuery):
             performer=audio_info.get('performer'),
             caption=f"Переслано от {callback.from_user.username or callback.from_user.full_name}"
         ))
-        # параллельно
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Обновляем текст под кнопками
         await callback.message.edit_text(
             "Добавлено в плейлисты:\n" + "\n".join(selected)
         )
     else:
         await callback.message.edit_text("Вы ничего не выбрали.")
 
-    # чистим
     user_choices.pop(user_id, None)
     user_audio.pop(user_id, None)
     await callback.answer()
 
 
 async def on_startup(app: web.Application):
-    await bot.set_webhook(WEBHOOK_URL)
+    try:
+        await bot.set_webhook(WEBHOOK_URL)
+        logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+    except Exception as e:
+        logging.error(f"Ошибка при установке webhook: {e}")
 
 
 async def on_shutdown(app: web.Application):
@@ -147,10 +147,13 @@ async def on_shutdown(app: web.Application):
 
 
 app = web.Application()
+
+# Важно: добавляем явно маршрут webhook
+app.router.add_post(WEBHOOK_PATH, webhook_handler(dispatcher=dp, bot=bot))
+
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
-# подключаем aiogram к серверу aiohttp
 setup_application(app, dp, bot=bot)
 
 if __name__ == "__main__":
