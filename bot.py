@@ -8,6 +8,7 @@ import asyncio
 from aiogram import F
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.default import DefaultBotProperties
 
 API_TOKEN = os.getenv("API_TOKEN")  # получаем токен из переменной окружения
 WEBHOOK_PATH = f"/webhook"  # путь, можно любой
@@ -15,7 +16,11 @@ BASE_WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # Render вставит е�
 WEBHOOK_URL = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
+
+bot = Bot(
+    token=API_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher()
 
 # Топики и их thread_id
