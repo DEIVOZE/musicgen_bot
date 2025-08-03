@@ -1,15 +1,21 @@
-import os
 import logging
+import os
+from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
+from aiogram.webhook.aiohttp_server import setup_application
+from aiohttp import web
 import asyncio
-from aiogram import Bot, Dispatcher, F
+from aiogram import F
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+API_TOKEN = os.getenv("BOT_TOKEN")  # получаем токен из переменной окружения
+WEBHOOK_PATH = f"/webhook"  # путь, можно любой
+BASE_WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # Render вставит его сам
+WEBHOOK_URL = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
 
 logging.basicConfig(level=logging.INFO)
-API_TOKEN = os.getenv("API_TOKEN")
-
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
 # Топики и их thread_id
@@ -27,8 +33,9 @@ topics_cache = {
 }
 
 # храним выбор пользователя и его аудио
-user_choices = {}   # user_id -> set(topic_name)
-user_audio = {}     # user_id -> {'file_id': ..., 'title': ..., 'performer': ...}
+user_choices = {}  # user_id -> set(topic_name)
+user_audio = {}  # user_id -> {'file_id': ..., 'title': ..., 'performer': ...}
+
 
 def get_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
@@ -42,6 +49,7 @@ def get_keyboard(user_id: int):
     builder.button(text="✅ Готово", callback_data="done")
     builder.adjust(1)
     return builder.as_markup()
+
 
 @dp.message(F.audio & (F.message_thread_id == None))
 async def get_music(message: Message):
@@ -60,6 +68,7 @@ async def get_music(message: Message):
         reply_markup=get_keyboard(user_id)
     )
 
+
 @dp.callback_query(F.data.startswith("toggle:"))
 async def toggle_choice(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -71,6 +80,7 @@ async def toggle_choice(callback: CallbackQuery):
         selected.add(topic)
     await callback.message.edit_reply_markup(reply_markup=get_keyboard(user_id))
     await callback.answer()
+
 
 @dp.callback_query(F.data == "done")
 async def process_done(callback: CallbackQuery):
@@ -123,8 +133,20 @@ async def process_done(callback: CallbackQuery):
     await callback.answer()
 
 
-async def main():
-    await dp.start_polling(bot)
+async def on_startup(app: web.Application):
+    await bot.set_webhook(WEBHOOK_URL)
+
+
+async def on_shutdown(app: web.Application):
+    await bot.delete_webhook()
+
+
+app = web.Application()
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
+
+# подключаем aiogram к серверу aiohttp
+setup_application(app, dp, bot=bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    web.run_app(app, port=int(os.getenv("PORT", 10000)))
