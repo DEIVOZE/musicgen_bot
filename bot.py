@@ -8,8 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 logging.basicConfig(level=logging.INFO)
-# API_TOKEN = os.getenv("API_TOKEN")
-API_TOKEN = "8272378518:AAGCeeu_R5r2y1j1uuO6Rv-HM_dxxbmtQSE"
+API_TOKEN = os.getenv("API_TOKEN")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
