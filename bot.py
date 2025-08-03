@@ -1,31 +1,20 @@
-import logging
 import os
+import logging
 import asyncio
-
 from aiogram import Bot, Dispatcher, F
-from aiogram.enums import ParseMode
 from aiogram.filters.command import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.client.default import DefaultBotProperties
-from aiogram.webhook.aiohttp_server import setup_application
-from aiohttp import web
 
-API_TOKEN = os.getenv("API_TOKEN")  # токен бота
-WEBHOOK_PATH = "/webhook"  # путь для webhook, обязательно с /
-BASE_WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # URL твоего сервера без слэша на конце
-WEBHOOK_URL = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
 
 logging.basicConfig(level=logging.INFO)
+# API_TOKEN = os.getenv("API_TOKEN")
+API_TOKEN = "8272378518:AAGCeeu_R5r2y1j1uuO6Rv-HM_dxxbmtQSE"
 
-bot = Bot(
-    token=API_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Здесь твой словарь topics_cache и остальные обработчики (копируй свои)
-
+# Топики и их thread_id
 topics_cache = {
     'Любимое': 23,
     'Сон': 22,
@@ -39,9 +28,9 @@ topics_cache = {
     'Рок': 8
 }
 
-user_choices = {}
-user_audio = {}
-
+# храним выбор пользователя и его аудио
+user_choices = {}   # user_id -> set(topic_name)
+user_audio = {}     # user_id -> {'file_id': ..., 'title': ..., 'performer': ...}
 
 def get_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
@@ -56,26 +45,26 @@ def get_keyboard(user_id: int):
     builder.adjust(1)
     return builder.as_markup()
 
-
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
-    await message.answer("Привет! Я бот для сортировки музыки по жанрам и не только!")
-
+    await message.answer("Привет! Это бот для сортировки музыки по жанрам и не только!")
 
 @dp.message(F.audio & (F.message_thread_id == None))
 async def get_music(message: Message):
     user_id = message.from_user.id
+    # сохраняем файл и метаданные
     user_audio[user_id] = {
         'file_id': message.audio.file_id,
         'title': message.audio.title,
         'performer': message.audio.performer
     }
+    # сбрасываем предыдущий выбор
     user_choices[user_id] = set()
+    # показываем клавиатуру
     await message.reply(
         "Выберите плейлисты, куда переслать эту музыку:",
         reply_markup=get_keyboard(user_id)
     )
-
 
 @dp.callback_query(F.data.startswith("toggle:"))
 async def toggle_choice(callback: CallbackQuery):
@@ -89,7 +78,6 @@ async def toggle_choice(callback: CallbackQuery):
     await callback.message.edit_reply_markup(reply_markup=get_keyboard(user_id))
     await callback.answer()
 
-
 @dp.callback_query(F.data == "done")
 async def process_done(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -97,14 +85,17 @@ async def process_done(callback: CallbackQuery):
     audio_info = user_audio.get(user_id)
 
     if not audio_info:
+        # на всякий случай
         await callback.message.edit_text("Ошибка: не удалось найти аудио. Повторите отправку файла.")
         return
 
     if selected:
+        # Отправляем аудио во все выбранные топики
         group_id = callback.message.chat.id
         tasks = []
         for topic in selected:
             thread_id = topics_cache[topic]
+            # напрямую по file_id, без скачивания
             tasks.append(bot.send_audio(
                 chat_id=group_id,
                 message_thread_id=thread_id,
@@ -113,6 +104,7 @@ async def process_done(callback: CallbackQuery):
                 performer=audio_info.get('performer'),
                 caption=f"Переслано от {callback.from_user.username or callback.from_user.full_name}"
             ))
+        # Добавление в плейлист вся музыка
         tasks.append(bot.send_audio(
             chat_id=group_id,
             message_thread_id=2,
@@ -121,38 +113,24 @@ async def process_done(callback: CallbackQuery):
             performer=audio_info.get('performer'),
             caption=f"Переслано от {callback.from_user.username or callback.from_user.full_name}"
         ))
+        # параллельно
         await asyncio.gather(*tasks, return_exceptions=True)
 
+        # Обновляем текст под кнопками
         await callback.message.edit_text(
             "Добавлено в плейлисты:\n" + "\n".join(selected)
         )
     else:
         await callback.message.edit_text("Вы ничего не выбрали.")
 
+    # чистим
     user_choices.pop(user_id, None)
     user_audio.pop(user_id, None)
     await callback.answer()
 
 
-async def on_startup(app: web.Application):
-    try:
-        await bot.set_webhook(WEBHOOK_URL)
-        logging.info(f"Webhook установлен: {WEBHOOK_URL}")
-    except Exception as e:
-        logging.error(f"Ошибка при установке webhook: {e}")
-
-
-async def on_shutdown(app: web.Application):
-    await bot.delete_webhook()
-
-
-app = web.Application()
-
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
-
-# Указываем путь webhook явно
-setup_application(app, dp, bot=bot, path=WEBHOOK_PATH)
+async def main():
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    web.run_app(app, port=int(os.getenv("PORT", 10000)))
+    asyncio.run(main())
