@@ -1,3 +1,4 @@
+import os
 import logging
 import asyncio
 from aiogram import Bot, Dispatcher, F
@@ -6,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 logging.basicConfig(level=logging.INFO)
-API_TOKEN = "TOKEN"
+API_TOKEN = os.getenv("API_TOKEN")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
