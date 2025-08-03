@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
-from aiogram.webhook.aiohttp_server import setup_application, webhook_handler
+from aiogram.webhook.aiohttp_server import setup_application
 from aiohttp import web
 
 API_TOKEN = os.getenv("API_TOKEN")  # токен бота
@@ -148,13 +148,11 @@ async def on_shutdown(app: web.Application):
 
 app = web.Application()
 
-# Важно: добавляем явно маршрут webhook
-app.router.add_post(WEBHOOK_PATH, webhook_handler(dispatcher=dp, bot=bot))
-
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
-setup_application(app, dp, bot=bot)
+# Указываем путь webhook явно
+setup_application(app, dp, bot=bot, path=WEBHOOK_PATH)
 
 if __name__ == "__main__":
     web.run_app(app, port=int(os.getenv("PORT", 10000)))
